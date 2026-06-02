@@ -102,12 +102,19 @@ def _normalise(raw: list[dict]) -> list[dict[str, Any]]:
 
 
 def _format_date(value: Any) -> str:
-    """Convert various date representations to an ISO-8601 string."""
+    """Convert various date representations to a clean UTC ISO-8601 string (no timezone suffix)."""
     if isinstance(value, datetime):
-        return value.isoformat()
+        # Strip timezone info and store as plain UTC string for consistent string comparison
+        return value.replace(tzinfo=None).isoformat()
     if isinstance(value, str):
-        return value
+        # Normalise existing strings – strip any timezone suffix
+        try:
+            dt = datetime.fromisoformat(value)
+            return dt.replace(tzinfo=None).isoformat()
+        except ValueError:
+            return value
     try:
-        return pd.Timestamp(value).isoformat()
+        ts = pd.Timestamp(value)
+        return ts.tz_localize(None).isoformat() if ts.tzinfo else ts.isoformat()
     except Exception:
         return ""

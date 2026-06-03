@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard – Review Mind AI</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/dashboard.css" />
+</head>
+<body class="dashboard-body">
+
+  <!-- ── SIDEBAR ──────────────────────────────────────────────────────────── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-icon"><i class="bi bi-stars"></i></div>
+      <span class="brand-name">Review Mind <span class="text-purple">AI</span></span>
+    </div>
+
+    <nav class="sidebar-nav">
+      <a href="#overview"       class="nav-item active" data-section="overview">
+        <i class="bi bi-grid-1x2-fill"></i><span>Overview</span>
+      </a>
+      <a href="#analysis"       class="nav-item" data-section="analysis">
+        <i class="bi bi-chat-left-text-fill"></i><span>Analysis</span>
+      </a>
+      <a href="#trends"         class="nav-item" data-section="trends">
+        <i class="bi bi-graph-up-arrow"></i><span>Trends</span>
+      </a>
+      <a href="#priorities"     class="nav-item" data-section="priorities">
+        <i class="bi bi-trophy-fill"></i><span>Priority Issues</span>
+      </a>
+      <a href="#reports"        class="nav-item" data-section="reports">
+        <i class="bi bi-file-earmark-text-fill"></i><span>Reports</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <a href="index.html" class="nav-item">
+        <i class="bi bi-house-fill"></i><span>Home</span>
+      </a>
+    </div>
+  </aside>
+
+  <!-- ── MAIN ─────────────────────────────────────────────────────────────── -->
+  <main class="main-content" id="mainContent">
+
+    <!-- Top bar -->
+    <header class="topbar">
+      <button class="sidebar-toggle d-lg-none" onclick="toggleSidebar()">
+        <i class="bi bi-list"></i>
+      </button>
+      <div class="topbar-info">
+        <span class="topbar-label">App:</span>
+        <span class="topbar-value" id="topbarPackage">—</span>
+        <span class="topbar-sep">|</span>
+        <span class="topbar-label">Period:</span>
+        <select class="period-select" id="periodSelect" onchange="changePeriod()">
+          <option value="7d">Last 7 days</option>
+          <option value="30d" selected>Last 30 days</option>
+          <option value="90d">Last 90 days</option>
+        </select>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-outline-purple btn-sm" onclick="refreshAll()">
+          <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+        </button>
+        <button class="btn btn-purple btn-sm" onclick="downloadReport()">
+          <i class="bi bi-download me-1"></i>Download Report
+        </button>
+      </div>
+    </header>
+
+    <!-- Loading overlay -->
+    <div id="loadingOverlay" class="loading-overlay d-none">
+      <div class="loading-box">
+        <div class="spinner-border text-purple mb-3" role="status"></div>
+        <div class="loading-text" id="loadingText">Loading dashboard…</div>
+        <div class="loading-sub">This may take a moment for large datasets</div>
+      </div>
+    </div>
+
+    <!-- No data state -->
+    <div id="noDataState" class="no-data-state d-none">
+      <div class="no-data-icon"><i class="bi bi-inbox"></i></div>
+      <h4>No data found</h4>
+      <p id="noDataMsg">Enter a package name and run a fresh analysis.</p>
+      <div class="d-flex gap-2 justify-content-center mt-3 flex-wrap">
+        <input type="text" id="quickPackage" class="form-control" style="max-width:220px" placeholder="com.whatsapp" />
+        <select id="quickMaxReviews" class="form-select" style="max-width:150px">
+          <option value="10">10 reviews</option>
+          <option value="20" selected>20 reviews</option>
+          <option value="50">50 reviews</option>
+        </select>
+        <button class="btn btn-purple" onclick="quickAnalyze()">
+          <i class="bi bi-lightning-fill me-1"></i>Analyze
+        </button>
+      </div>
+      <div id="quickStatus" class="mt-3" style="font-size:13px;color:#6b7280"></div>
+    </div>
+
+    <!-- Dashboard content -->
+    <div id="dashboardContent" class="dashboard-content d-none">
+
+      <!-- ═══════════════════════════════════════════════════════════════════
+           SECTION: OVERVIEW
+      ═══════════════════════════════════════════════════════════════════ -->
+      <section id="overview" class="dash-section">
+        <div class="section-header">
+          <h2 class="section-title"><i class="bi bi-grid-1x2-fill me-2 text-purple"></i>Overview</h2>
+          <span class="section-sub" id="overviewPeriodLabel"></span>
+        </div>
+
+        <!-- Stat cards -->
+        <div class="row g-3 mb-4">
+          <div class="col-6 col-lg-3">
+            <div class="stat-card">
+              <div class="stat-icon purple"><i class="bi bi-chat-square-text-fill"></i></div>
+              <div class="stat-body">
+                <div class="stat-value" id="statTotal">—</div>
+                <div class="stat-label">Total Reviews</div>
+              </div>
+            </div>
+          </div>
+          <div class="col-6 col-lg-3">
+            <div class="stat-card">
+              <div class="stat-icon green"><i class="bi bi-emoji-smile-fill"></i></div>
+              <div class="stat-body">
+                <div class="stat-value" id="statPositive">—</div>
+                <div class="stat-label">Positive
+                  <span class="stat-change" id="changePositive"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="col-6 col-lg-3">
+            <div class="stat-card">
+              <div class="stat-icon red"><i class="bi bi-emoji-frown-fill"></i></div>
+              <div class="stat-body">
+                <div class="stat-value" id="statNegative">—</div>
+                <div class="stat-label">Negative
+                  <span class="stat-change" id="changeNegative"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="col-6 col-lg-3">
+            <div class="stat-card">
+              <div class="stat-icon yellow"><i class="bi bi-emoji-neutral-fill"></i></div>
+              <div class="stat-body">
+                <div class="stat-value" id="statNeutral">—</div>
+                <div class="stat-label">Neutral
+                  <span class="stat-change" id="changeNeutral"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Charts row -->
+        <div class="row g-3">
+          <div class="col-lg-4">
+            <div class="chart-card">
+              <div class="chart-card-header">
+                <span class="chart-title">Sentiment Distribution</span>
+              </div>
+              <div class="chart-body">
+                <canvas id="sentimentPieChart"></canvas>
+              </div>
+            </div>
+          </div>
+          <div class="col-lg-8">
+            <div class="chart-card">
+              <div class="chart-card-header">
+                <span class="chart-title">Feedback Type Breakdown</span>
+              </div>
+              <div class="chart-body">
+                <canvas id="feedbackBarChart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════════════════
+           SECTION: ANALYSIS (Model 1)
+      ═══════════════════════════════════════════════════════════════════ -->
+      <section id="analysis" class="dash-section">
+        <div class="section-header">
+          <h2 class="section-title"><i class="bi bi-chat-left-text-fill me-2 text-purple"></i>Review Analysis</h2>
+          <span class="section-sub">Individual review intelligence from Model 1</span>
+        </div>
+
+        <!-- Top issues bar chart -->
+        <div class="chart-card mb-4">
+          <div class="chart-card-header">
+            <span class="chart-title">Top Issues by Mention Count</span>
+          </div>
+          <div class="chart-body">
+            <canvas id="topIssuesChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Recent reviews table -->
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <span class="chart-title">Recent Reviews</span>
+            <span class="chart-sub" id="reviewTableSub"></span>
+          </div>
+          <div class="table-responsive">
+            <table class="rma-table" id="reviewsTable">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Review</th>
+                  <th>Sentiment</th>
+                  <th>Type</th>
+                  <th>Score</th>
+                  <th>AI Summary</th>
+                </tr>
+              </thead>
+              <tbody id="reviewsTableBody">
+                <tr><td colspan="6" class="text-center text-muted py-4">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════════════════
+           SECTION: TRENDS (Model 2)
+      ═══════════════════════════════════════════════════════════════════ -->
+      <section id="trends" class="dash-section">
+        <div class="section-header">
+          <h2 class="section-title"><i class="bi bi-graph-up-arrow me-2 text-purple"></i>Trend Analysis</h2>
+          <span class="section-sub">Patterns and emerging issues from Model 2</span>
+        </div>
+
+        <!-- Trend summary card -->
+        <div class="ai-summary-card mb-4" id="trendSummaryCard">
+          <div class="ai-summary-header"><i class="bi bi-robot me-2"></i>AI Trend Summary</div>
+          <div class="ai-summary-text" id="trendSummaryText">Loading…</div>
+        </div>
+
+        <div class="row g-3 mb-4">
+          <!-- Feedback type trend -->
+          <div class="col-lg-6">
+            <div class="chart-card h-100">
+              <div class="chart-card-header">
+                <span class="chart-title">Feedback Type Distribution</span>
+              </div>
+              <div class="chart-body">
+                <canvas id="feedbackDoughnutChart"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Emerging issues -->
+          <div class="col-lg-6">
+            <div class="chart-card h-100">
+              <div class="chart-card-header">
+                <span class="chart-title">Emerging Issues</span>
+                <span class="badge-emerging ms-2">Live</span>
+              </div>
+              <div id="emergingIssuesList" class="emerging-list p-3">
+                <div class="text-muted text-center py-3">Loading…</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sentiment change indicators -->
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <span class="chart-title">Sentiment Change vs Previous Period</span>
+          </div>
+          <div class="row g-3 p-3" id="sentimentChangeRow">
+            <div class="col-md-4">
+              <div class="change-card green">
+                <div class="change-label">Positive</div>
+                <div class="change-value" id="changePos">—</div>
+                <div class="change-desc">vs previous period</div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="change-card red">
+                <div class="change-label">Negative</div>
+                <div class="change-value" id="changeNeg">—</div>
+                <div class="change-desc">vs previous period</div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="change-card yellow">
+                <div class="change-label">Neutral</div>
+                <div class="change-value" id="changeNeu">—</div>
+                <div class="change-desc">vs previous period</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════════════════
+           SECTION: PRIORITIES (Model 3)
+      ═══════════════════════════════════════════════════════════════════ -->
+      <section id="priorities" class="dash-section">
+        <div class="section-header">
+          <h2 class="section-title"><i class="bi bi-trophy-fill me-2 text-purple"></i>Priority Intelligence</h2>
+          <span class="section-sub">Ranked issues and recommendations from Model 3</span>
+        </div>
+
+        <!-- What Users Love -->
+        <div class="chart-card mb-4" id="positiveHighlightsCard">
+          <div class="chart-card-header">
+            <span class="chart-title"><i class="bi bi-heart-fill me-2" style="color:#059669"></i>What Users Love</span>
+            <span class="chart-sub">Positive highlights — not included in issue rankings</span>
+          </div>
+          <div id="positiveHighlightsList" class="p-3 d-flex flex-wrap gap-2">
+            <div class="text-muted" style="font-size:13px">Loading…</div>
+          </div>
+        </div>
+
+        <!-- Priority board table -->
+        <div class="chart-card mb-4">
+          <div class="chart-card-header">
+            <span class="chart-title">Priority Issue Board</span>
+            <span class="chart-sub">Ranked by weighted score: Impact 40% · Growth 30% · Severity 20% · Sentiment 10%</span>
+          </div>
+          <div class="table-responsive">
+            <table class="rma-table" id="priorityTable">
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Issue</th>
+                  <th>Priority Score</th>
+                  <th>Severity</th>
+                  <th>Affected Users</th>
+                  <th>Growth</th>
+                  <th>Feedback Type</th>
+                </tr>
+              </thead>
+              <tbody id="priorityTableBody">
+                <tr><td colspan="7" class="text-center text-muted py-4">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Feature requests -->
+        <div class="chart-card mb-4">
+          <div class="chart-card-header">
+            <span class="chart-title">Top Feature Requests</span>
+          </div>
+          <div class="chart-body">
+            <canvas id="featuresChart"></canvas>
+          </div>
+        </div>
+
+        <!-- AI Recommendations -->
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <span class="chart-title"><i class="bi bi-lightbulb-fill me-2 text-purple"></i>AI Recommendations</span>
+          </div>
+          <div id="recommendationsList" class="p-3">
+            <div class="text-muted text-center py-3">Loading…</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════════════════════════════════
+           SECTION: REPORTS
+      ═══════════════════════════════════════════════════════════════════ -->
+      <section id="reports" class="dash-section">
+        <div class="section-header">
+          <h2 class="section-title"><i class="bi bi-file-earmark-text-fill me-2 text-purple"></i>Executive Report</h2>
+          <span class="section-sub">AI-generated full report</span>
+        </div>
+
+        <div class="chart-card mb-4">
+          <div class="chart-card-header">
+            <span class="chart-title"><i class="bi bi-robot me-2"></i>Executive Summary</span>
+          </div>
+          <div class="p-4">
+            <div class="ai-summary-text large" id="execSummaryText">Loading…</div>
+          </div>
+        </div>
+
+        <div class="row g-3">
+          <div class="col-md-6">
+            <div class="chart-card">
+              <div class="chart-card-header"><span class="chart-title">Report Details</span></div>
+              <div class="p-3">
+                <table class="report-meta-table" id="reportMetaTable">
+                  <tr><td class="meta-label">Package</td><td id="metaPackage">—</td></tr>
+                  <tr><td class="meta-label">Period</td><td id="metaPeriod">—</td></tr>
+                  <tr><td class="meta-label">Total Reviews</td><td id="metaTotal">—</td></tr>
+                  <tr><td class="meta-label">Generated At</td><td id="metaGeneratedAt">—</td></tr>
+                  <tr><td class="meta-label">Top Issue</td><td id="metaTopIssue">—</td></tr>
+                  <tr><td class="meta-label">Top Severity</td><td id="metaSeverity">—</td></tr>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="chart-card h-100">
+              <div class="chart-card-header"><span class="chart-title">Actions</span></div>
+              <div class="p-4 d-flex flex-column gap-3">
+                <button class="btn btn-purple w-100" onclick="downloadReport()">
+                  <i class="bi bi-download me-2"></i>Download Full Report (JSON)
+                </button>
+                <button class="btn btn-outline-purple w-100" onclick="downloadCSV()">
+                  <i class="bi bi-filetype-csv me-2"></i>Export Reviews (CSV)
+                </button>
+                <button class="btn btn-outline-secondary w-100" onclick="refreshAll()">
+                  <i class="bi bi-arrow-clockwise me-2"></i>Regenerate Report
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div><!-- /dashboardContent -->
+  </main><!-- /main-content -->
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/dashboard.js"></script>
+  <script>
+    // Safety net: show no-data if everything stays hidden after 4s
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        const overlay   = document.getElementById('loadingOverlay');
+        const noData    = document.getElementById('noDataState');
+        const dashboard = document.getElementById('dashboardContent');
+        const allHidden = overlay?.classList.contains('d-none') &&
+                          noData?.classList.contains('d-none') &&
+                          dashboard?.classList.contains('d-none');
+        if (allHidden) noData?.classList.remove('d-none');
+      }, 4000);
+    });
+  </script>
+</body>
+</html>

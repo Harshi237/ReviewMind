@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Review Mind AI – AI-Powered Review Intelligence</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <!-- ── NAVBAR ──────────────────────────────────────────────────────────── -->
+  <nav class="navbar navbar-expand-lg navbar-light rma-navbar">
+    <div class="container">
+      <a class="navbar-brand d-flex align-items-center gap-2" href="#">
+        <div class="brand-icon"><i class="bi bi-stars"></i></div>
+        <span class="brand-name">Review Mind <span class="text-purple">AI</span></span>
+      </a>
+      <div class="ms-auto d-flex align-items-center gap-3">
+        <span class="badge-pill">Beta</span>
+        <a href="dashboard.html" class="btn btn-purple btn-sm">Open Dashboard</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ── HERO ────────────────────────────────────────────────────────────── -->
+  <section class="hero-section">
+    <div class="container">
+      <div class="row justify-content-center text-center">
+        <div class="col-lg-8">
+          <div class="hero-badge mb-3"><i class="bi bi-magic me-1"></i>Powered by Groq · LLaMA 3.3</div>
+          <h1 class="hero-title">AI-Powered Customer<br><span class="text-purple">Feedback Intelligence</span></h1>
+          <p class="hero-subtitle">Transform thousands of app reviews into actionable insights.<br>Understand what users love, hate, and need — instantly.</p>
+
+          <!-- Input card -->
+          <div class="input-card mt-5">
+            <label class="input-label">Enter Google Play Package Name</label>
+            <div class="input-row mt-3">
+              <div class="input-wrapper">
+                <i class="bi bi-google-play input-icon"></i>
+                <input
+                  type="text"
+                  id="packageInput"
+                  class="rma-input"
+                  placeholder="e.g. com.whatsapp"
+                  autocomplete="off"
+                />
+              </div>
+              <div class="input-wrapper count-wrapper">
+                <i class="bi bi-collection input-icon"></i>
+                <input
+                  type="number"
+                  id="reviewCount"
+                  class="rma-input count-input"
+                  placeholder="Reviews (max 50)"
+                  min="5"
+                  max="50"
+                  value="20"
+                />
+              </div>
+              <button id="analyzeBtn" class="btn btn-purple btn-analyze" onclick="startAnalysis()">
+                <span id="analyzeBtnText"><i class="bi bi-lightning-fill me-1"></i>Analyze</span>
+                <span id="analyzeBtnSpinner" class="d-none">
+                  <span class="spinner-border spinner-border-sm me-1"></span>Analyzing…
+                </span>
+              </button>
+            </div>
+            <div class="quick-examples mt-3">
+              <span class="example-label">Quick examples:</span>
+              <button class="example-chip" onclick="setPackage('com.whatsapp')">WhatsApp</button>
+              <button class="example-chip" onclick="setPackage('com.spotify.music')">Spotify</button>
+              <button class="example-chip" onclick="setPackage('com.instagram.android')">Instagram</button>
+              <button class="example-chip" onclick="setPackage('com.google.android.youtube')">YouTube</button>
+              <button class="example-chip" onclick="setPackage('com.ubercab')">Uber</button>
+            </div>
+            <!-- Status -->
+            <div id="statusArea" class="status-area d-none mt-3"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── FEATURE CARDS ────────────────────────────────────────────────────── -->
+  <section class="features-section">
+    <div class="container">
+      <div class="section-label text-center mb-5">What Review Mind AI does</div>
+      <div class="row g-4">
+        <div class="col-md-4">
+          <div class="feature-card">
+            <div class="feature-icon purple"><i class="bi bi-chat-left-text-fill"></i></div>
+            <h5 class="feature-title">Review Intelligence</h5>
+            <p class="feature-desc">Classifies every review by sentiment, feedback type, and generates a concise English summary — even from multilingual input.</p>
+            <ul class="feature-list">
+              <li><i class="bi bi-check2-circle"></i> Sentiment Analysis</li>
+              <li><i class="bi bi-check2-circle"></i> Feedback Classification</li>
+              <li><i class="bi bi-check2-circle"></i> Multilingual Support</li>
+            </ul>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="feature-card">
+            <div class="feature-icon blue"><i class="bi bi-graph-up-arrow"></i></div>
+            <h5 class="feature-title">Trend Analysis</h5>
+            <p class="feature-desc">Identifies growing issues, emerging bugs, and sentiment shifts over 7, 30, or 90 day windows with period-over-period comparison.</p>
+            <ul class="feature-list">
+              <li><i class="bi bi-check2-circle"></i> Emerging Issue Detection</li>
+              <li><i class="bi bi-check2-circle"></i> Sentiment Trends</li>
+              <li><i class="bi bi-check2-circle"></i> Period Comparison</li>
+            </ul>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="feature-card">
+            <div class="feature-icon green"><i class="bi bi-trophy-fill"></i></div>
+            <h5 class="feature-title">Priority Intelligence</h5>
+            <p class="feature-desc">Ranks issues by a weighted score combining impact, growth, severity, and sentiment so teams know exactly what to fix first.</p>
+            <ul class="feature-list">
+              <li><i class="bi bi-check2-circle"></i> Priority Scoring</li>
+              <li><i class="bi bi-check2-circle"></i> AI Recommendations</li>
+              <li><i class="bi bi-check2-circle"></i> Feature Request Ranking</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── HOW IT WORKS ──────────────────────────────────────────────────────── -->
+  <section class="how-section">
+    <div class="container">
+      <div class="section-label text-center mb-5">How it works</div>
+      <div class="row justify-content-center">
+        <div class="col-lg-10">
+          <div class="steps-row">
+            <div class="step-item">
+              <div class="step-number">1</div>
+              <div class="step-content">
+                <h6>Enter Package Name</h6>
+                <p>Provide any Google Play app package identifier</p>
+              </div>
+            </div>
+            <div class="step-arrow"><i class="bi bi-arrow-right"></i></div>
+            <div class="step-item">
+              <div class="step-number">2</div>
+              <div class="step-content">
+                <h6>Fetch Reviews</h6>
+                <p>Scraper pulls the latest reviews from Play Store</p>
+              </div>
+            </div>
+            <div class="step-arrow"><i class="bi bi-arrow-right"></i></div>
+            <div class="step-item">
+              <div class="step-number">3</div>
+              <div class="step-content">
+                <h6>AI Analysis</h6>
+                <p>LLaMA 3.3 classifies and summarises each review</p>
+              </div>
+            </div>
+            <div class="step-arrow"><i class="bi bi-arrow-right"></i></div>
+            <div class="step-item">
+              <div class="step-number">4</div>
+              <div class="step-content">
+                <h6>Actionable Dashboard</h6>
+                <p>Trends, priorities, and recommendations in one view</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── FOOTER ───────────────────────────────────────────────────────────── -->
+  <footer class="rma-footer">
+    <div class="container text-center">
+      <span class="brand-name">Review Mind <span class="text-purple">AI</span></span>
+      <span class="ms-3 text-muted small">AI-Powered Review Intelligence Platform</span>
+    </div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/home.js"></script>
+</body>
+</html>

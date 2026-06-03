@@ -172,10 +172,10 @@ async def get_feedback_type_counts(
 
 
 # ---------------------------------------------------------------------------
-# 3. Top issues  (keyword frequency on summaries, DB-side)
+# 3. Top issues  – AI-powered extraction (replaces n-gram approach)
 # ---------------------------------------------------------------------------
 
-# Stopwords to filter out before counting issue keywords
+# Stopwords kept for the feature-request path in priority_service
 _STOPWORDS = {
     "the","a","an","is","in","of","to","and","or","for","with","that",
     "this","it","not","after","has","been","app","update","user","users",
@@ -188,6 +188,86 @@ _STOPWORDS = {
 }
 
 
+def _extract_issues_with_llm(summaries: list[str], top_n: int) -> dict[str, Any]:
+    """
+    Group review summaries into issue clusters and positive highlights.
+    Uses simple heuristic grouping — no extra Groq call here.
+    Groq is reserved for the final recommendations step only.
+    """
+    if not summaries:
+        return {"issues": [], "positiveHighlights": []}
+
+    issues: list[dict] = []
+    highlights: list[dict] = []
+    seen_issues: dict[str, int] = {}
+    seen_highlights: dict[str, int] = {}
+
+    for s in summaries:
+        s = s.strip()
+        if not s:
+            continue
+        if _is_positive_phrase(s):
+            # Normalise key
+            key = s.lower()[:80]
+            seen_highlights[key] = seen_highlights.get(key, 0) + 1
+        else:
+            key = s.lower()[:80]
+            seen_issues[key] = seen_issues.get(key, 0) + 1
+
+    # Sort by frequency, take top N
+    top_issues = sorted(seen_issues.items(), key=lambda x: x[1], reverse=True)
+    top_highlights = sorted(seen_highlights.items(), key=lambda x: x[1], reverse=True)
+
+    # Deduplicate: drop shorter entries that are substrings of longer ones
+    def _dedup(items: list[tuple[str, int]], n: int) -> list[dict]:
+        result = []
+        for phrase, count in items:
+            if not any(phrase in kept for kept, _ in result):
+                result.append((phrase, count))
+            if len(result) >= n:
+                break
+        return [{"issue": p.title(), "count": c} for p, c in result]
+
+    def _dedup_highlights(items: list[tuple[str, int]], n: int) -> list[dict]:
+        result = []
+        for phrase, count in items:
+            if not any(phrase in kept for kept, _ in result):
+                result.append((phrase, count))
+            if len(result) >= n:
+                break
+        return [{"highlight": p.title(), "count": c} for p, c in result]
+
+    return {
+        "issues":            _dedup(top_issues, top_n),
+        "positiveHighlights":_dedup_highlights(top_highlights, 5),
+    }
+
+
+# Positive-phrase guard — last-resort filter before any issue enters the pipeline
+_POSITIVE_WORDS = {
+    "great","excellent","amazing","awesome","love","loved","best","perfect",
+    "wonderful","fantastic","superb","good","nice","brilliant","outstanding",
+    "beautiful","smooth","easy","helpful","fast","quick","enjoy","enjoyed",
+    "happy","satisfied","pleased","impressed","appreciate","recommended",
+    "flawless","seamless","intuitive","clean","simple","works well","works great",
+}
+
+def _is_positive_phrase(title: str) -> bool:
+    """Return True if the phrase is clearly positive praise, not an issue."""
+    lower = title.lower()
+    tokens = set(re.findall(r"\w+", lower))
+    positive_hits = tokens & _POSITIVE_WORDS
+    negative_words = {
+        "crash","fail","failed","error","bug","slow","broken","not","cannot",
+        "cant","issue","problem","missing","fix","delay","stuck","freeze",
+        "wrong","bad","poor","terrible","awful","hate","annoying","frustrating",
+        "unable","refused","declined","charged","lost","deleted","disappeared",
+    }
+    negative_hits = tokens & negative_words
+    # Positive if has positive words and NO negative words
+    return len(positive_hits) > 0 and len(negative_hits) == 0
+
+
 async def get_top_issues(
     start: datetime,
     end: datetime,
@@ -195,49 +275,91 @@ async def get_top_issues(
     top_n: int = 10,
 ) -> list[dict[str, Any]]:
     """
-    Extract top issues by counting bi-gram and tri-gram phrases
-    across review summaries within the time window.
-
-    Uses MongoDB to pull only summaries (minimal data transfer),
-    then applies lightweight NLP in Python.
+    Returns only actionable issues.
+    Fetches summaries from non-positive reviews only (Bug Report, Complaint, Suggestion).
+    Positive Feedback is excluded at the MongoDB query level.
     """
     collection = get_db()["reviews"]
     pipeline = [
-        {"$match": _build_match(start, end, package_name)},
+        {"$match": {
+            **_build_match(start, end, package_name),
+            "feedbackType": {"$in": ["Bug Report", "Complaint", "Suggestion", "General Feedback"]},
+        }},
         {"$project": {"_id": 0, "summary": 1}},
     ]
 
     summaries: list[str] = []
     async for doc in collection.aggregate(pipeline):
         s = doc.get("summary", "").strip()
-        if s:
-            summaries.append(s.lower())
+        if s and not _is_positive_phrase(s):
+            summaries.append(s)
 
     if not summaries:
         return []
 
-    phrase_counter: Counter = Counter()
-    for summary in summaries:
-        # Clean punctuation
-        clean = re.sub(r"[^a-z\s]", "", summary)
-        words = [w for w in clean.split() if w not in _STOPWORDS and len(w) > 2]
+    result = _extract_issues_with_llm(summaries, top_n)
+    return result.get("issues", [])
 
-        # Bi-grams
-        for i in range(len(words) - 1):
-            phrase_counter[f"{words[i]} {words[i+1]}"] += 1
 
-        # Tri-grams
-        for i in range(len(words) - 2):
-            phrase_counter[f"{words[i]} {words[i+1]} {words[i+2]}"] += 1
+async def get_top_issues_and_highlights(
+    start: datetime,
+    end: datetime,
+    package_name: Optional[str] = None,
+    top_n: int = 10,
+) -> dict[str, Any]:
+    """
+    Returns both issues (from non-positive reviews) and positiveHighlights
+    (from Positive Feedback reviews) in one call. No extra Groq API calls.
+    """
+    collection = get_db()["reviews"]
 
-    # Filter out low-frequency noise (must appear in at least 2 reviews)
-    filtered = {k: v for k, v in phrase_counter.items() if v >= 2}
-    top = sorted(filtered.items(), key=lambda x: x[1], reverse=True)[:top_n]
-
-    return [
-        {"issue": phrase.title(), "count": count}
-        for phrase, count in top
+    # Issues: from complaints, bugs, suggestions
+    issue_pipeline = [
+        {"$match": {
+            **_build_match(start, end, package_name),
+            "feedbackType": {"$in": ["Bug Report", "Complaint", "Suggestion", "General Feedback"]},
+        }},
+        {"$project": {"_id": 0, "summary": 1}},
     ]
+
+    # Highlights: from positive feedback
+    highlight_pipeline = [
+        {"$match": {
+            **_build_match(start, end, package_name),
+            "feedbackType": "Positive Feedback",
+        }},
+        {"$project": {"_id": 0, "summary": 1}},
+    ]
+
+    issue_summaries: list[str] = []
+    async for doc in collection.aggregate(issue_pipeline):
+        s = doc.get("summary", "").strip()
+        if s and not _is_positive_phrase(s):
+            issue_summaries.append(s)
+
+    highlight_summaries: list[str] = []
+    async for doc in collection.aggregate(highlight_pipeline):
+        s = doc.get("summary", "").strip()
+        if s:
+            highlight_summaries.append(s)
+
+    if not issue_summaries and not highlight_summaries:
+        return {"issues": [], "positiveHighlights": []}
+
+    # Build issues from non-positive summaries
+    issues_result = _extract_issues_with_llm(issue_summaries, top_n)
+    issues = issues_result.get("issues", [])
+
+    # Build highlights from positive summaries (separate clean list)
+    highlights: list[dict] = []
+    seen: dict[str, int] = {}
+    for s in highlight_summaries:
+        key = s.strip().lower()[:80]
+        seen[key] = seen.get(key, 0) + 1
+    top_pos = sorted(seen.items(), key=lambda x: x[1], reverse=True)[:5]
+    highlights = [{"highlight": p.title(), "count": c} for p, c in top_pos]
+
+    return {"issues": issues, "positiveHighlights": highlights}
 
 
 # ---------------------------------------------------------------------------

@@ -130,7 +130,7 @@ async def get_issue_ranking(
     Returns only the ranked issue list without AI recommendations.
     Faster than the full report — useful for dashboards that need just the ranking.
     """
-    ranked, _ = await get_ranked_issues(
+    ranked, _, _highlights = await get_ranked_issues(
         period, packageName, topN, DEFAULT_WEIGHTS
     )
 
@@ -248,19 +248,15 @@ async def get_executive_report(
 
 def _deserialise_report(d: dict) -> PriorityReport:
     """Convert a raw dict (from MongoDB cache or fresh build) to PriorityReport."""
+    from models.priority_model import PositiveHighlight
     return PriorityReport(
-        packageName     = d.get("packageName"),
-        period          = d.get("period", "30d"),
-        totalReviews    = d.get("totalReviews", 0),
-        generatedAt     = d.get("generatedAt", ""),
-        topPriorityIssues = [
-            RankedIssue(**i) for i in d.get("topPriorityIssues", [])
-        ],
-        topFeatureRequests = [
-            RankedFeature(**f) for f in d.get("topFeatureRequests", [])
-        ],
-        recommendations = [
-            Recommendation(**r) for r in d.get("recommendations", [])
-        ],
-        executiveSummary = d.get("executiveSummary", ""),
+        packageName        = d.get("packageName"),
+        period             = d.get("period", "30d"),
+        totalReviews       = d.get("totalReviews", 0),
+        generatedAt        = d.get("generatedAt", ""),
+        topPriorityIssues  = [RankedIssue(**i)  for i in d.get("topPriorityIssues", [])],
+        topFeatureRequests = [RankedFeature(**f) for f in d.get("topFeatureRequests", [])],
+        positiveHighlights = [PositiveHighlight(**h) for h in d.get("positiveHighlights", [])],
+        recommendations    = [Recommendation(**r) for r in d.get("recommendations", [])],
+        executiveSummary   = d.get("executiveSummary", ""),
     )

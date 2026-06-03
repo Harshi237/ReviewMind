@@ -103,6 +103,11 @@ class Recommendation(BaseModel):
     reason: str
 
 
+class PositiveHighlight(BaseModel):
+    highlight: str
+    count: int
+
+
 # ---------------------------------------------------------------------------
 # Full priority report
 # ---------------------------------------------------------------------------
@@ -115,6 +120,7 @@ class PriorityReport(BaseModel):
     generatedAt: str
     topPriorityIssues: list[RankedIssue]
     topFeatureRequests: list[RankedFeature]
+    positiveHighlights: list[PositiveHighlight] = []
     recommendations: list[Recommendation]
     executiveSummary: str
 

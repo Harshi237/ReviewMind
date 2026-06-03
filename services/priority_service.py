@@ -33,8 +33,10 @@ from services.trend_service import (
     _period_to_days,
     _STOPWORDS,
     _to_percentages,
+    _is_positive_phrase,
     get_sentiment_counts,
     get_top_issues,
+    get_top_issues_and_highlights,
     get_total_count,
 )
 
@@ -207,7 +209,7 @@ async def _get_issue_sentiment(
 
 
 # ---------------------------------------------------------------------------
-# 3. Feature request extraction
+# 3. Feature request extraction – AI-powered
 # ---------------------------------------------------------------------------
 
 async def get_feature_requests(
@@ -218,8 +220,8 @@ async def get_feature_requests(
     top_n: int = 10,
 ) -> list[dict[str, Any]]:
     """
-    Extract top feature requests by scanning summaries of Suggestion reviews.
-    Returns ranked list with request count and priority score.
+    Extract top feature requests from Suggestion reviews using Groq.
+    Returns complete, human-readable feature titles with counts and priority scores.
     """
     collection = get_db()["reviews"]
     pipeline = [
@@ -231,36 +233,71 @@ async def get_feature_requests(
     async for doc in collection.aggregate(pipeline):
         s = doc.get("summary", "").strip()
         if s:
-            summaries.append(s.lower())
+            summaries.append(s)
 
     if not summaries:
         return []
 
-    phrase_counter: Counter = Counter()
-    for summary in summaries:
-        clean = re.sub(r"[^a-z\s]", "", summary)
-        words = [w for w in clean.split() if w not in _STOPWORDS and len(w) > 2]
-        for i in range(len(words) - 1):
-            phrase_counter[f"{words[i]} {words[i+1]}"] += 1
-        for i in range(len(words) - 2):
-            phrase_counter[f"{words[i]} {words[i+1]} {words[i+2]}"] += 1
-
-    filtered = {k: v for k, v in phrase_counter.items() if v >= 2}
-    top = sorted(filtered.items(), key=lambda x: x[1], reverse=True)[:top_n]
-
     total_suggestions = len(summaries) or 1
+    sample = summaries[:200]
+    numbered = "\n".join(f"{i+1}. {s}" for i, s in enumerate(sample))
+
+    prompt = (
+        "You are a product analyst reviewing feature requests from app users.\n"
+        "Below are summaries of user suggestions.\n\n"
+        "Your task:\n"
+        f"1. Identify the top {top_n} distinct feature requests.\n"
+        "2. Write a COMPLETE, human-readable feature title (3–6 words) for each.\n"
+        "3. Count how many summaries relate to each feature request.\n\n"
+        "Rules:\n"
+        "- Titles must be complete (e.g. 'Add Dark Mode Option', "
+        "'Offline Playback Support', 'Improve Search Functionality').\n"
+        "- Never use single words or fragments.\n"
+        "- Merge similar requests.\n"
+        "- Sort by count descending.\n\n"
+        f"Suggestion summaries:\n{numbered}\n\n"
+        'Reply ONLY as JSON: {"features": [{"feature": "...", "count": N}, ...]}'
+    )
+
+    features_raw = []
+    try:
+        response = _groq.chat.completions.create(
+            model=_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            max_tokens=500,
+            response_format={"type": "json_object"},
+        )
+        import json
+        data = json.loads(response.choices[0].message.content)
+        features_raw = data.get("features", [])
+    except RateLimitError:
+        logger.warning("Groq rate limit hit during feature extraction.")
+    except Exception as exc:
+        logger.warning("Feature extraction failed: %s", exc)
+
+    # Fallback: use full summary sentences
+    if not features_raw:
+        counter: Counter = Counter(s.strip() for s in summaries if len(s.strip()) > 5)
+        features_raw = [
+            {"feature": k.title(), "count": v}
+            for k, v in counter.most_common(top_n)
+        ]
+
     results = []
-    for rank, (phrase, count) in enumerate(top, start=1):
-        req_pct  = round(count / total_suggestions * 100, 1)
-        # Feature priority = purely volume-based (no severity/growth dimension)
-        p_score  = round(min(count / total_suggestions * 100 * 2, 100), 1)
-        results.append({
-            "rank":           rank,
-            "feature":        phrase.title(),
-            "requests":       count,
-            "requestPercent": req_pct,
-            "priorityScore":  p_score,
-        })
+    for rank, item in enumerate(features_raw[:top_n], start=1):
+        title   = str(item.get("feature", "")).strip()
+        count   = int(item.get("count", 1))
+        req_pct = round(count / total_suggestions * 100, 1)
+        p_score = round(min(count / total_suggestions * 100 * 2, 100), 1)
+        if title:
+            results.append({
+                "rank":           rank,
+                "feature":        title,
+                "requests":       count,
+                "requestPercent": req_pct,
+                "priorityScore":  p_score,
+            })
 
     return results
 
@@ -357,11 +394,12 @@ async def get_ranked_issues(
     package_name: Optional[str],
     top_n:        int,
     weights:      dict[str, float],
-) -> tuple[list[dict[str, Any]], int]:
+) -> tuple[list[dict[str, Any]], int, list[dict[str, Any]]]:
     """
-    Build a fully scored and ranked list of issues for the given period.
+    Build a fully scored and ranked list of ACTIONABLE issues for the given period.
+    Positive feedback is excluded at the extraction level.
 
-    Returns (ranked_issues, total_review_count).
+    Returns (ranked_issues, total_review_count, positive_highlights).
     """
     days      = _period_to_days(period)
     now       = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -370,21 +408,27 @@ async def get_ranked_issues(
     prev_end  = curr_start
     prev_start= prev_end - timedelta(days=days)
 
-    # ── Step 1: get raw top issues + total count in parallel ──────────────
-    raw_issues, total = await asyncio.gather(
-        get_top_issues(curr_start, curr_end, package_name, top_n=top_n * 2),
+    # ── Step 1: get issues + highlights + total count in parallel ─────────
+    issues_result, total = await asyncio.gather(
+        get_top_issues_and_highlights(curr_start, curr_end, package_name, top_n=top_n * 2),
         get_total_count(curr_start, curr_end, package_name),
     )
 
+    raw_issues         = issues_result.get("issues", [])
+    positive_highlights= issues_result.get("positiveHighlights", [])
+
+    # Extra guard: remove any positive items that slipped through
+    raw_issues = [i for i in raw_issues if not _is_positive_phrase(i["issue"])]
+
     if not raw_issues or total == 0:
-        return [], total
+        return [], total, positive_highlights
 
     # ── Step 2: LLM clustering (one call) ─────────────────────────────────
-    issue_names   = [item["issue"] for item in raw_issues]
-    cluster_map   = cluster_issues_with_llm(issue_names)
+    issue_names = [item["issue"] for item in raw_issues]
+    cluster_map = cluster_issues_with_llm(issue_names)
 
     # ── Step 3: per-issue growth + sentiment (parallelised) ───────────────
-    growth_tasks   = [
+    growth_tasks = [
         _get_issue_growth(
             item["issue"], curr_start, curr_end,
             prev_start, prev_end, package_name,
@@ -406,11 +450,11 @@ async def get_ranked_issues(
     for item, (curr_cnt, prev_cnt, growth_pct), sent in zip(
         raw_issues, growth_results, sentiment_results
     ):
-        issue       = item["issue"]
-        cluster     = cluster_map.get(issue, issue)
-        affected_pct= round(curr_cnt / total * 100, 1)
-        neg_pct     = sent["negativePct"]
-        severity    = _assign_severity(issue, growth_pct, neg_pct)
+        issue        = item["issue"]
+        cluster      = cluster_map.get(issue, issue)
+        affected_pct = round(curr_cnt / total * 100, 1)
+        neg_pct      = sent["negativePct"]
+        severity     = _assign_severity(issue, growth_pct, neg_pct)
 
         p_score = calculate_priority_score(
             impact_pct    = affected_pct,
@@ -439,7 +483,7 @@ async def get_ranked_issues(
     for rank, item in enumerate(scored[:top_n], start=1):
         item["rank"] = rank
 
-    return scored[:top_n], total
+    return scored[:top_n], total, positive_highlights
 
 
 # ---------------------------------------------------------------------------
@@ -586,16 +630,16 @@ async def build_priority_report(
     top_n:        int,
     weights:      dict[str, float],
 ) -> dict[str, Any]:
-    """
-    Orchestrate all Model 3 functions and return the complete priority report dict.
-    """
+    """Orchestrate all Model 3 functions and return the complete priority report dict."""
     days      = _period_to_days(period)
-    now       = datetime.now(timezone.utc)
+    now       = datetime.now(timezone.utc).replace(tzinfo=None)
     curr_end  = now
     curr_start= now - timedelta(days=days)
 
-    # ── Ranked issues + total ─────────────────────────────────────────────
-    ranked_issues, total = await get_ranked_issues(period, package_name, top_n, weights)
+    # ── Ranked issues + highlights + total ────────────────────────────────
+    ranked_issues, total, positive_highlights = await get_ranked_issues(
+        period, package_name, top_n, weights
+    )
 
     # ── Feature requests ──────────────────────────────────────────────────
     ranked_features = await get_feature_requests(
@@ -606,12 +650,13 @@ async def build_priority_report(
     recs, exec_summary = generate_recommendations(ranked_issues, ranked_features, period)
 
     return {
-        "packageName":       package_name,
-        "period":            period,
-        "totalReviews":      total,
-        "generatedAt":       datetime.utcnow().isoformat(),
-        "topPriorityIssues": ranked_issues,
-        "topFeatureRequests":ranked_features,
-        "recommendations":   recs,
-        "executiveSummary":  exec_summary,
+        "packageName":        package_name,
+        "period":             period,
+        "totalReviews":       total,
+        "generatedAt":        datetime.utcnow().isoformat(),
+        "topPriorityIssues":  ranked_issues,
+        "topFeatureRequests": ranked_features,
+        "positiveHighlights": positive_highlights,
+        "recommendations":    recs,
+        "executiveSummary":   exec_summary,
     }
